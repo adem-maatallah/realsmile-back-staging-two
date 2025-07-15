@@ -3,3 +3,5 @@ node_modules
 .vercel
 utils/templates
 prisma/schema.prisma
+patientAppCredentials.json
+service-account.json

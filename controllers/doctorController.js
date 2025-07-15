@@ -1,5 +1,6 @@
 const { PrismaClient, Prisma } = require("@prisma/client");
 const { withAccelerate } = require("@prisma/extension-accelerate");
+const asyncHandler = require("express-async-handler");
 
 const prisma = new PrismaClient().$extends(withAccelerate());
 
@@ -14,7 +15,19 @@ const queueEmail = require("./../utils/email");
 const accountSid = process.env.TWILIO_TEST_ACCOUNT_SID;
 const authToken = process.env.TWILIO_TEST_AUTH_TOKEN;
 const client = require("twilio")(accountSid, authToken);
-
+// Helper function to convert BigInt to Number safely for JSON responses
+const safeBigIntToNumber = (value) => {
+  if (typeof value === 'bigint') {
+    // Check if the BigInt is within safe integer range before converting
+    if (value > Number.MAX_SAFE_INTEGER || value < Number.MIN_SAFE_INTEGER) {
+      console.warn(`BigInt value ${value} exceeds Number.MAX_SAFE_INTEGER or MIN_SAFE_INTEGER. Potential precision loss.`);
+      // You might want to stringify it if precise BigInt representation is critical on frontend
+      return value.toString();
+    }
+    return Number(value);
+  }
+  return value;
+};
 exports.getAll = async (req, res) => {
   try {
     let doctorsQuery = {
@@ -440,49 +453,59 @@ exports.verifyOtp = async (req, res, next) => {
     next(error);
   }
 };
-exports.getDoctorLocations =  async (req, res) => {
+// Your existing getDoctorLocations, already wrapped in asyncHandler, which is good.
+// Your existing getDoctorLocations, already wrapped in asyncHandler, which is good.
+exports.getDoctorLocations = asyncHandler(async (req, res) => {
     try {
-        // Fetch all users with role 'doctor' and their location data
-        // Assuming 'role' is a field in your 'users' table, or you join with 'roles' table.
-        // If 'role_id' is used, you might need to find the role_id for 'doctor' first, or join.
-        // For simplicity, assuming 'role' string is directly on the user model or accessible via a relation.
-        // If 'role' is a relation, you'd do: include: { role: true } and then filter by role.name
-        const doctors = await prisma.users.findMany({
+        const doctorsData = await prisma.doctors.findMany({
             where: {
-                // Assuming 'role' is a direct string field or a simple relation to a 'roles' table
-                // If 'role_id' is the only field, you'd need to know the ID for 'doctor' (e.g., 3)
-                // For example: role_id: 3n (if BigInt) or role_id: 3 (if Int)
-                role: { // Assuming 'role' is a direct string field on 'users' model
-                    name: 'doctor' // Assuming role model has a 'name' field
+                user: {
+                    role: {
+                        name: 'doctor'
+                    },
+                    latitude: { not: null },
+                    longitude: { not: null },
                 },
-                // OR if 'role' is a direct string field on 'users' table:
-                // role: 'doctor', // Use this if 'role' is a string column on the users table
-                
-                // Ensure latitude and longitude are not null for display on map
-                latitude: { not: null },
-                longitude: { not: null },
             },
             select: {
                 id: true,
-                user_name: true, // Or first_name, last_name
-                country: true,
-                latitude: true,
-                longitude: true,
-                // Add other public contact info if desired, e.g., phone, email (if public)
-                // phone: true,
-                // email: true,
+                speciality: true,
+                address: true,
+                city: true,
+                office_phone: true,
+                user: {
+                    select: {
+                        id: true,
+                        user_name: true,
+                        first_name: true,
+                        last_name: true,
+                        country: true,
+                        latitude: true,
+                        longitude: true,
+                        email: true,
+                        phone: true,
+                        // Add profile_pic here
+                        profile_pic: true, // <--- ADD THIS LINE
+                    },
+                },
             },
         });
 
-        // Map data to ensure BigInt is stringified and coordinates are numbers
-        const formattedDoctors = doctors.map(doctor => ({
-            id: doctor.id.toString(),
-            user_name: doctor.user_name,
-            country: doctor.country,
-            latitude: parseFloat(doctor.latitude), // Convert Decimal to number
-            longitude: parseFloat(doctor.longitude), // Convert Decimal to number
-            // phone: doctor.phone, // Include if selected above
-            // email: doctor.email, // Include if selected above
+        const formattedDoctors = doctorsData.map(doctor => ({
+            id: safeBigIntToNumber(doctor.user.id), // Use safeBigIntToNumber here
+            user_name: doctor.user.user_name || `${doctor.user.first_name || ''} ${doctor.user.last_name || ''}`.trim(),
+            first_name: doctor.user.first_name,
+            last_name: doctor.user.last_name,
+            country: doctor.user.country,
+            latitude: doctor.user.latitude !== null ? parseFloat(doctor.user.latitude.toString()) : null,
+            longitude: doctor.user.longitude !== null ? parseFloat(doctor.user.longitude.toString()) : null,
+            phone: doctor.office_phone || doctor.user.phone,
+            email: doctor.user.email,
+            speciality: doctor.speciality,
+            address: doctor.address,
+            city: doctor.city,
+            // Add profile_pic to the formatted output
+            profile_pic: doctor.user.profile_pic, // <--- ADD THIS LINE
         }));
 
         res.status(200).json(formattedDoctors);
@@ -490,4 +513,4 @@ exports.getDoctorLocations =  async (req, res) => {
         console.error('Error retrieving doctor locations:', error);
         res.status(500).json({ message: 'Failed to retrieve doctor locations.', error: error.message });
     }
-}
+});
