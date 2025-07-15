@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Invoice</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            background-color: #f9f9f9;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            position: relative;
+        }
+
+        .invoice {
+            width: 210mm;
+            height: 297mm;
+            background-color: #fff;
+            padding: 20mm;
+            box-sizing: border-box;
+            border-radius: 8px;
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            position: relative;
+        }
+
+        .invoice-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+
+        .invoice-logo img {
+            width: 200px;
+            height: auto;
+        }
+
+        .invoice-logo h1 {
+            margin: 0;
+            font-size: 24px;
+            color: #bfa17a;
+        }
+
+        .invoice-logo p {
+            margin: 0;
+            color: #bfa17a;
+        }
+
+        .invoice-info-box {
+            border: 3px solid #bfa17a;
+            padding: 15px;
+            border-radius: 8px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            width: 300px;
+        }
+
+        .invoice-info {
+            width: 100%;
+            text-align: center;
+        }
+
+        .invoice-info h2 {
+            margin: 0 0 10px 0;
+            font-size: 28px;
+            color: #bfa17a;
+            text-align: center;
+            width: 100%;
+        }
+
+        .invoice-info div {
+            display: flex;
+            justify-content: space-between;
+            width: 100%;
+            margin: 5px 0;
+        }
+
+        .invoice-info div p {
+            margin: 0;
+            color: #777;
+        }
+
+        .invoice-info div span {
+            color: #777;
+        }
+
+        .invoice-from-to {
+            display: flex;
+            justify-content: space-between;
+            margin-top: 20px;
+        }
+
+        .invoice-from, .invoice-to {
+            width: 45%;
+        }
+
+        .invoice-from h3, .invoice-to h3 {
+            margin: 0 0 10px 0;
+            font-size: 16px;
+            color: #bfa17a;
+        }
+
+        .invoice-from p, .invoice-to p {
+            margin: 10px 0;
+            color: #777;
+        }
+
+        .invoice-details {
+            margin-top: 20px;
+            flex-grow: 1;
+        }
+
+        .invoice-details table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        .invoice-details table th, .invoice-details table td {
+            border: 1px solid #ddd;
+            padding: 10px;
+            text-align: left;
+        }
+
+        .invoice-details table th {
+            background-color: #f5f5f5;
+            color: #333;
+        }
+
+        .invoice-details table tfoot td {
+            text-align: right;
+            font-weight: bold;
+        }
+
+        footer {
+            text-align: center;
+            padding: 5px 20px;
+            background-color: black;
+            color: #bfa17a;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            width: 100%;
+            box-sizing: border-box;
+            border-radius: 0 0 8px 8px;
+        }
+
+        .footer-logo img {
+            width: 100px;
+            height: auto;
+        }
+
+        .footer-info {
+            text-align: right;
+        }
+
+        .footer-info p {
+            margin: 2px 0;
+            font-size: 12px;
+        }
+
+        @media print {
+            body, .invoice {
+                margin: 0;
+                padding: 0;
+                box-shadow: none;
+                background: none;
+                width: 100%;
+                height: auto;
+            }
+            .invoice {
+                page-break-after: always;
+                height: auto;
+                padding: 0;
+            }
+            .invoice-header,
+            .invoice-from-to,
+            .invoice-details,
+            footer {
+                margin: 0;
+                padding: 0;
+                box-shadow: none;
+                page-break-inside: avoid;
+            }
+            footer {
+                background-color: black;
+                color: #bfa17a;
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                padding: 5px 20px;
+                box-sizing: border-box;
+                border-radius: 0 0 8px 8px;
+                position: fixed;
+                bottom: 0;
+                width: 100%;
+            }
+        }
+    </style>
+</head>
+<body>
+<div class="invoice">
+    <div class="invoice-header">
+        <div class="invoice-logo">
+            <img src="https://storage.googleapis.com/realsmilefiles/staticFolder/logo-2.svg" alt="Real Smile Logo">
+            <h1>Real Smile</h1>
+            <p>Paris</p>
+        </div>
+        <div class="invoice-info-box">
+            <div class="invoice-info">
+                <h2>FACTURE</h2>
+                <div>
+                    <p>Numéro:</p>
+                    <span>{{invoiceNumber}}</span>
+                </div>
+                <div>
+                    <p>Date:</p>
+                    <span>{{invoiceDate}}</span>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="invoice-from-to">
+        <div class="invoice-from">
+            <h3>Facture de la part de</h3>
+            <p>REAL SCAN</p>
+            <p>Realsmile</p>
+            <p>contact@realsmile.fr</p>
+            <p>13 Rue Jean de la Fontaine</p>
+            <p>02400 CHATEAU THIERRY</p>
+            <p>FRANCE</p>
+        </div>
+        <div class="invoice-to">
+            <h3>Facturé à</h3>
+            <p>{{doctorName}}</p>
+            <p>{{doctorEmail}}</p>
+            <p>{{doctorAddress}}</p>
+        </div>
+    </div>
+    <div class="invoice-details">
+        <table>
+            <thead>
+            <tr>
+                <th>QTE</th>
+                <th>DÉSIGNATION</th>
+                <th>P.U.TTC</th>
+                <th>P.T.TTC</th>
+            </tr>
+            </thead>
+            <tbody>
+            <tr>
+                <td>1</td>
+                <td>{{packName}}</td>
+                <td>{{price1}}</td>
+                <td>{{price2}}</td>
+            </tr>
+            </tbody>
+            <tfoot>
+            <tr>
+                <td colspan="3">Total</td>
+                <td>{{totalPrice}}</td>
+            </tr>
+            </tfoot>
+        </table>
+    </div>
+    <div class="invoice-conditions-payment">
+        <div class="invoice-conditions">
+            <h3>Notes</h3>
+            <p>Nous apprécions votre entreprise. Si vous avez besoin de nous pour ajouter la TVA ou des notes supplémentaires, faites-le nous savoir!</p>
+        </div>
+<!--        <div class="invoice-payment">-->
+<!--            <h3>{{paymentMethod}}</h3>-->
+<!--            <p>Code de transaction: {{transactionCode}}</p>-->
+<!--        </div>-->
+    </div>
+    <footer>
+        <div class="footer-logo">
+            <img src="https://storage.googleapis.com/realsmilefiles/staticFolder/logo-2.svg" alt="Real Smile Logo">
+        </div>
+        <div class="footer-info">
+            <p>{{footerInformation}}</p>
+        </div>
+    </footer>
+</div>
+</body>
+</html>

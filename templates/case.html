@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <title>Rapport de Cas</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0 auto;
+            width: 80%;
+            background-color: #f9f9f9;
+            padding: 20px;
+            position: relative;
+        }
+
+        h1, h2 {
+            text-align: center;
+            color: #333;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+            table-layout: fixed;
+            background: linear-gradient(to right, #e0eafc, #cfdef3);
+        }
+
+        th, td {
+            border: 1px solid #ddd;
+            padding: 8px;
+            text-align: left;
+            word-wrap: break-word;
+        }
+
+        th {
+            background-color: #af9772;
+            color: white;
+            text-align: center;
+        }
+
+        ul {
+            list-style: none;
+            padding: 0;
+        }
+
+        li {
+            margin: 5px 0;
+        }
+
+        .section-title {
+            background-color: #af9772;
+            color: white;
+            padding: 8px;
+            text-align: center;
+            font-size: 18px;
+            margin: 20px 0;
+        }
+
+        .header-banner {
+            background: url("https://storage.googleapis.com/realsmilefiles/staticFolder/header-banner.jpg") no-repeat center center;
+            background-size: cover;
+            padding: 100px 20px;
+        }
+
+        ::placeholder {
+            color: #666;
+            opacity: 1;
+        }
+
+        .watermark {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            opacity: 0.2;
+            pointer-events: none;
+            z-index: 1000;
+        }
+    </style>
+</head>
+<body>
+    <div class="header-banner"></div>
+    <h1>ORDONNANCE MÉDECINE</h1>
+    <h2>Numéro de Dossier {{caseId}}</h2>
+    <table>
+        <tr>
+            <th style="width: 30%">Prénom</th>
+            <th style="width: 40%">Nom</th>
+            <th style="width: 30%">Genre</th>
+        </tr>
+        <tr>
+            <td>{{firstName}}</td>
+            <td>{{lastName}}</td>
+            <td>{{gender}}</td>
+        </tr>
+        <tr>
+            <th>Date de Naissance</th>
+            <td colspan="2">{{dateOfBirth}}</td>
+        </tr>
+    </table>
+
+    <div class="section-title">Spécifications du Traitement</div>
+    <table id="caseTable">
+        {{caseDataRows}}
+    </table>
+</body>
+</html>

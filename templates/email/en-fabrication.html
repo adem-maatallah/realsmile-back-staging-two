@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="fr">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Case Information</title>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        margin: 20px;
+        background-color: #f5f5f5;
+      }
+      .container {
+        background-color: #fff;
+        padding: 20px;
+        border-radius: 8px;
+        box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+      }
+      .header {
+        font-size: 24px;
+        margin-bottom: 10px;
+      }
+      .details {
+        font-size: 18px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <div class="header">Information du Cas</div>
+      <div class="details">
+        <p>
+          Vous avez un cas en cours de fabrication, Case ID :
+          <strong>{{case_id}}</strong>
+        </p>
+        <p>Nom du docteur : <strong>{{doctor_name}}</strong></p>
+        <p>Nom du patient : <strong>{{patient_name}}</strong></p>
+      </div>
+    </div>
+  </body>
+</html>
