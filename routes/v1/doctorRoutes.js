@@ -34,6 +34,10 @@ router.get(
   authController.restrictTo("doctor"),
   doctorController.doctorCaseStatistics
 );
+router.get(
+  "/details/:id", // This expects an 'id' parameter
+  doctorController.getDoctorDetails
+);
 
 router.get("/locations", 
   // authController.protect,

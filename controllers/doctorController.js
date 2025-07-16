@@ -485,6 +485,8 @@ exports.getDoctorLocations = asyncHandler(async (req, res) => {
                         email: true,
                         phone: true,
                         // Add profile_pic here
+                        country: true, // <-- This is where the country comes from the users table
+
                         profile_pic: true, // <--- ADD THIS LINE
                     },
                 },
@@ -513,4 +515,127 @@ exports.getDoctorLocations = asyncHandler(async (req, res) => {
         console.error('Error retrieving doctor locations:', error);
         res.status(500).json({ message: 'Failed to retrieve doctor locations.', error: error.message });
     }
+});
+// New function to get a single doctor's full details
+exports.getDoctorDetails = asyncHandler(async (req, res) => {
+  const { id } = req.params; // Get the doctor ID from the URL parameters
+
+  try {
+    const doctor = await prisma.doctors.findUnique({
+      where: {
+        user_id: BigInt(id), // Assuming doctorId corresponds to user_id (BigInt)
+      },
+      include: {
+        user: {
+          select: {
+            id: true,
+            user_name: true,
+            first_name: true,
+            last_name: true,
+            email: true,
+            phone: true,
+            profile_pic: true,
+            country: true,
+            latitude: true,
+            longitude: true,
+          },
+        },
+      },
+    });
+
+    if (!doctor) {
+      return res.status(404).json({ message: 'Doctor not found.' });
+    }
+
+    // Format the doctor data similar to how you do it for getDoctorLocations
+    const formattedDoctor = {
+      id: safeBigIntToNumber(doctor.user.id).toString(), // Ensure ID is string for consistency with frontend
+      user_name: doctor.user.user_name || `${doctor.user.first_name || ''} ${doctor.user.last_name || ''}`.trim(),
+      first_name: doctor.user.first_name,
+      last_name: doctor.user.last_name,
+      email: doctor.user.email,
+      phone: doctor.user.phone,
+      profile_pic: doctor.user.profile_pic,
+      country: doctor.user.country,
+      latitude: doctor.user.latitude !== null ? parseFloat(doctor.user.latitude.toString()) : null,
+      longitude: doctor.user.longitude !== null ? parseFloat(doctor.user.longitude.toString()) : null,
+      speciality: doctor.speciality,
+      address: doctor.address,
+      address_2: doctor.address_2, // Include address_2
+      city: doctor.city,
+      zip: doctor.zip, // Include zip
+      office_phone: doctor.office_phone, // Include office_phone
+    };
+
+    res.status(200).json(formattedDoctor);
+  } catch (error) {
+    console.error('Error retrieving doctor details:', error);
+    res.status(500).json({ message: 'Failed to retrieve doctor details.', error: error.message });
+  }
+});
+exports.getDoctorById = asyncHandler(async (req, res) => {
+  try {
+    const doctorId = req.params.id;
+
+    const doctorData = await prisma.doctors.findFirst({
+      where: {
+        user_id: BigInt(doctorId), // Assuming the ID passed is the user_id
+        user: {
+          role: {
+            name: 'doctor'
+          },
+        },
+      },
+      select: {
+        id: true,
+        speciality: true,
+        address: true,
+        address_2: true,
+        city: true,
+        zip: true,
+        office_phone: true,
+        user: {
+          select: {
+            id: true,
+            user_name: true,
+            first_name: true,
+            last_name: true,
+            country: true,
+            latitude: true,
+            longitude: true,
+            email: true,
+            phone: true,
+            profile_pic: true,
+          },
+        },
+      },
+    });
+
+    if (!doctorData) {
+      return res.status(404).json({ message: 'Doctor not found.' });
+    }
+
+    const formattedDoctor = {
+      id: safeBigIntToNumber(doctorData.user.id),
+      user_name: doctorData.user.user_name || `${doctorData.user.first_name || ''} ${doctorData.user.last_name || ''}`.trim(),
+      first_name: doctorData.user.first_name,
+      last_name: doctorData.user.last_name,
+      country: doctorData.user.country,
+      latitude: doctorData.user.latitude !== null ? parseFloat(doctorData.user.latitude.toString()) : null,
+      longitude: doctorData.user.longitude !== null ? parseFloat(doctorData.user.longitude.toString()) : null,
+      phone: doctorData.office_phone || doctorData.user.phone,
+      email: doctorData.user.email,
+      speciality: doctorData.speciality,
+      address: doctorData.address,
+      address_2: doctorData.address_2,
+      city: doctorData.city,
+      zip: doctorData.zip,
+      profile_pic: doctorData.user.profile_pic,
+    };
+
+    res.status(200).json(formattedDoctor);
+  } catch (error) {
+    console.error('Error retrieving doctor details:', error);
+    res.status(500).json({ message: 'Failed to retrieve doctor details.', error: error.message });
+  }
 });
