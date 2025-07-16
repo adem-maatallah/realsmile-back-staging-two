@@ -1,20 +1,23 @@
-// routes/contact.js
+// routes/contactRoutes.js
 const express = require('express');
 const router = express.Router();
 const contactController = require('../../controllers/contactController'); // Path to your controller
+const authController = require('../../controllers/authController'); // Needed for protect and restrictTo middleware
 
-// Route 1: Handle sending a consultation request message and creating a doctor's calendar event
-// This is the primary route for the contact form on the doctor's profile page.
-router.post('/doctor', contactController.contactDoctorAndCreateCalendarEvent);
+// Public route: Handle sending a consultation request message and creating a doctor's calendar event
+router.post('/doctor', contactController.requestConsultation);
 
-// Route 2: Initiate Google Calendar OAuth for a doctor to link their calendar
-// This route generates the URL for the doctor to grant your application calendar access.
-// It's typically accessed from the doctor's authenticated dashboard/settings.
-router.get('/google/auth-url', contactController.initiateDoctorGoogleCalendarAuth);
+// Doctor-specific route: Initiate Google Calendar OAuth for a doctor to link their calendar
+// This route should be protected and restricted to 'doctor' role.
+router.get(
+  '/google/initiate-calendar-link',
+  authController.protect,           // Ensures user is logged in
+  authController.restrictTo('doctor'), // Ensures only doctors can access this
+  contactController.initiateDoctorGoogleCalendarAuth
+);
 
-// Route 3: Handle the callback from Google after a doctor grants calendar permissions
-// Google redirects to this URL after the doctor authorizes your application.
-// This route exchanges the authorization code for access/refresh tokens and stores them.
+// Public route: Handle the callback from Google after a doctor grants calendar permissions
+// Google redirects to this URL, so it must be public (no auth middleware).
 router.get('/google/callback', contactController.handleDoctorGoogleCalendarCallback);
 
 module.exports = router;

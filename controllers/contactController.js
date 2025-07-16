@@ -1,7 +1,9 @@
+// controllers/contactController.js
 const { PrismaClient } = require("@prisma/client");
 const { google } = require('googleapis');
 const asyncHandler = require("express-async-handler");
-const queueEmail = require("../utils/email"); // Ensure this path is correct for your project structure
+const queueEmail = require("../utils/email"); // Make sure this path is correct for your project structure
+const { BadRequestError, InternalError } = require("../middlewares/apiError"); // Assuming you have these
 
 const prisma = new PrismaClient();
 
@@ -11,100 +13,141 @@ const prisma = new PrismaClient();
 const oauth2Client = new google.auth.OAuth2(
     process.env.GOOGLE_CLIENT_ID,
     process.env.GOOGLE_CLIENT_SECRET,
-    process.env.GOOGLE_REDIRECT_URI // e.g., http://localhost:5000/api/contact/google/callback
+    process.env.GOOGLE_CALENDAR_REDIRECT_URI // This is your backend's redirect URI for OAuth
 );
 
-// Helper to handle BigInt serialization for JSON (if not already globally configured)
-// Not strictly needed in controller if safeBigIntToNumber is only used on response data,
-// but good to keep in mind if BigInts flow directly to/from API.
-
-// Route to initiate Google Calendar OAuth for a doctor
-// This endpoint generates the URL that a doctor needs to visit to grant calendar access.
-// It should be protected so only authenticated doctors can access it.
-exports.initiateDoctorGoogleCalendarAuth = asyncHandler(async (req, res) => {
-    // In a real application, you'd associate this auth request with the logged-in doctor's ID.
-    // For simplicity here, we might pass it as 'state' if the doctor is not logged into an API that provides their ID.
-    // Assuming req.user.id exists if this route is protected by auth middleware.
-    if (!req.user || !req.user.id) { // Example check for authenticated user
-        return res.status(401).json({ message: "Authentication required to link calendar." });
+/**
+ * @desc Initiates Google Calendar OAuth flow for an authenticated doctor.
+ * Doctor visits the returned authUrl to grant permissions.
+ * @route GET /api/contact/google/initiate-calendar-link
+ * @access Private (Doctor only, requires authentication)
+ */
+exports.initiateDoctorGoogleCalendarAuth = asyncHandler(async (req, res, next) => {
+    // Ensure the user is authenticated and is a doctor
+    // (Auth middleware should attach user info to req.user)
+    // Your `authController.protect` middleware should populate `req.user`.
+    // Then, `authController.restrictTo('doctor')` ensures only doctors reach here.
+    if (!req.user || !req.user.id || req.user.role !== 'doctor') { // Assuming req.user.role is a string like 'doctor'
+        throw new BadRequestError("Only authenticated doctors can link their calendar.");
     }
-    const doctorUserId = req.user.id; // Get ID of the doctor initiating the auth
+    const doctorUserId = req.user.id; // User ID is a BigInt, store as BigInt, pass as BigInt
 
-    const scopes = ['https://www.googleapis.com/auth/calendar.events']; // Scope for creating calendar events
+    // Scopes required for creating and managing events in the doctor's calendar
+    const scopes = ['https://www.googleapis.com/auth/calendar.events'];
+console.log('--- DÉBOGAGE GOOGLE OAUTH ---');
+    console.log('CLIENT_ID utilisé :', process.env.GOOGLE_CLIENT_ID);
+    console.log('REDIRECT_URI utilisé :', process.env.GOOGLE_CALENDAR_REDIRECT_URI);
+    console.log('-----------------------------');
     const authUrl = oauth2Client.generateAuthUrl({
-        access_type: 'offline', // Request a refresh token (important for long-term access)
+        access_type: 'offline', // Request a refresh token (crucial for long-term offline access)
         scope: scopes,
-        prompt: 'consent', // Ensures the consent screen is always shown to get refresh token
-        state: JSON.stringify({ userId: doctorUserId }), // Pass user ID to retrieve it in the callback
+        prompt: 'consent', // Always show consent screen to ensure refresh token is granted
+        state: JSON.stringify({ userId: doctorUserId.toString() }), // Pass user ID as string for JSON safety
     });
-    res.json({ authUrl });
+
+    res.status(200).json({ authUrl });
 });
 
-// Route to handle the callback from Google after a doctor grants calendar permissions
-// Google redirects to this URL with an authorization code.
-exports.handleDoctorGoogleCalendarCallback = asyncHandler(async (req, res) => {
-    const { code, state } = req.query; // 'code' is the auth code, 'state' is what we passed previously
+/**
+ * @desc Handles the callback from Google after a doctor grants calendar permissions.
+ * Google redirects to this URL with an authorization code.
+ * @route GET /api/contact/google/callback
+ * @access Public (Google redirects here)
+ */
+// controllers/contactController.js
+
+exports.handleDoctorGoogleCalendarCallback = asyncHandler(async (req, res, next) => {
+    const { code, state } = req.query;
+
+    console.log('--- Inside handleDoctorGoogleCalendarCallback ---');
+    console.log('Received code:', code);
+    console.log('Received state:', state);
 
     if (!code) {
-        console.error('Google OAuth callback: No code received.');
-        return res.redirect(`${process.env.FRONTEND_URL}/doctor/settings?calendarLinked=false&error=no_code`);
+        console.error('Error: No authorization code received.');
+        return res.redirect(`${process.env.CLIENT_URL}/doctor/settings?calendarLinked=false&error=no_code`);
+    }
+
+    let userIdFromState;
+    try {
+        userIdFromState = JSON.parse(state).userId;
+        console.log('Parsed userId from state:', userIdFromState);
+    } catch (e) {
+        console.error('Error parsing state:', e);
+        return res.redirect(`${process.env.CLIENT_URL}/doctor/settings?calendarLinked=false&error=invalid_state`);
     }
 
     try {
+        console.log('Attempting to exchange code for tokens...');
         const { tokens } = await oauth2Client.getToken(code);
-        const { userId } = JSON.parse(state); // Retrieve the doctor's user ID from the state
+        console.log('Successfully received tokens:', tokens);
+        if (tokens.refresh_token) {
+            console.log('Refresh Token received:', tokens.refresh_token);
+        } else {
+            console.warn('Warning: No refresh token in tokens object.');
+        }
 
-        // Securely save tokens (especially refresh_token) for this doctor in your database.
-        // You would likely add a 'googleCalendarRefreshToken' field to your 'users' model.
+        if (!tokens.refresh_token) {
+            console.error('Error: No refresh token received from Google.');
+            return res.redirect(`${process.env.CLIENT_URL}/doctor/settings?calendarLinked=false&error=no_refresh_token`);
+        }
+
+        console.log('Attempting to update user in DB:', userIdFromState);
         await prisma.users.update({
-            where: { id: BigInt(userId) },
+            where: { id: BigInt(userIdFromState) }, // Make sure userIdFromState is convertible to BigInt
             data: {
-                googleCalendarRefreshToken: tokens.refresh_token, // Store this securely!
-                // Optionally store access_token and expiry_date if needed immediately,
-                // but refresh_token is key for long-term offline access.
-            }
+                googleCalendarRefreshToken: tokens.refresh_token,
+            },
         });
+        console.log(`User ${userIdFromState} updated successfully in DB.`);
 
-        console.log(`Doctor ${userId} successfully linked Google Calendar.`);
-        res.redirect(`${process.env.FRONTEND_URL}/doctor/settings?calendarLinked=true`); // Redirect back to doctor's settings
+        console.log('Redirecting to frontend success URL...');
+        res.redirect(`${process.env.CLIENT_URL}/profile-settings?calendarLinked=true`);
     } catch (error) {
-        console.error('Error handling doctor Google Calendar callback:', error);
-        res.redirect(`${process.env.FRONTEND_URL}/doctor/settings?calendarLinked=false&error=auth_failed&details=${error.message}`);
+        console.error('FATAL ERROR in handleDoctorGoogleCalendarCallback:', error.message);
+        if (error.response && error.response.data) {
+            console.error('Google API Error Response:', error.response.data);
+        }
+        console.log('Redirecting to frontend error URL...');
+        res.redirect(`${process.env.CLIENT_URL}/profile-settings?calendarLinked=false&error=...`);
     }
 });
 
 
-// Main endpoint to handle client consultation requests, send email, and create calendar event
-exports.contactDoctorAndCreateCalendarEvent = asyncHandler(async (req, res) => {
+/**
+ * @desc Handles public client consultation requests, sends email to doctor,
+ * and creates a Google Calendar event if the doctor has linked their calendar.
+ * @route POST /api/contact/doctor
+ * @access Public
+ */
+exports.requestConsultation = asyncHandler(async (req, res, next) => {
     const { toDoctorId, clientFirstName, clientLastName, clientEmail, clientPhone, consultationDate, clientMessage } = req.body;
 
     // 1. Validate Inputs
     if (!toDoctorId || !clientFirstName || !clientLastName || !clientEmail || !clientPhone || !consultationDate || !clientMessage) {
-        return res.status(400).json({ message: "Tous les champs du formulaire sont obligatoires." });
+        throw new BadRequestError("Tous les champs du formulaire sont obligatoires.");
     }
 
-    // Server-side validation for consultation date (redundant but good practice)
     const parsedConsultationDate = new Date(consultationDate);
     const now = new Date();
     // Check if the date is valid AND in the future
     if (isNaN(parsedConsultationDate.getTime()) || parsedConsultationDate <= now) {
-        return res.status(400).json({ message: "La date et l'heure de consultation doivent être valides et dans le futur." });
+        throw new BadRequestError("La date et l'heure de consultation doivent être valides et dans le futur.");
     }
 
     try {
-        // 2. Find Doctor's Details and Calendar Refresh Token
+        // 2. Find Doctor's Details and Calendar Refresh Token from DB
         const doctor = await prisma.doctors.findUnique({
             where: { user_id: BigInt(toDoctorId) },
             include: { user: true } // Ensure to include the related user data
         });
 
         if (!doctor || !doctor.user || !doctor.user.email) {
-            return res.status(404).json({ message: "Médecin introuvable ou n'a pas d'email de contact." });
+            throw new BadRequestError("Médecin introuvable ou n'a pas d'email de contact.");
         }
 
         const doctorEmail = doctor.user.email;
         const doctorFullName = `${doctor.user.first_name || ''} ${doctor.user.last_name || ''}`.trim();
-        // Retrieve the stored Google Calendar refresh token for this doctor
         const doctorGoogleCalendarRefreshToken = doctor.user.googleCalendarRefreshToken;
 
         // 3. Send Email to Doctor
@@ -117,10 +160,13 @@ exports.contactDoctorAndCreateCalendarEvent = asyncHandler(async (req, res) => {
                 <li><strong>Nom complet:</strong> ${clientFirstName} ${clientLastName}</li>
                 <li><strong>Email:</strong> <a href="mailto:${clientEmail}">${clientEmail}</a></li>
                 <li><strong>Téléphone:</strong> <a href="tel:${clientPhone}">${clientPhone}</a></li>
-                <li><strong>Date et heure souhaitées:</strong> ${parsedConsultationDate.toLocaleString('fr-FR')}</li>
+                <li><strong>Date et heure souhaitées:</strong> ${parsedConsultationDate.toLocaleString('fr-FR', {
+                    year: 'numeric', month: 'long', day: 'numeric',
+                    hour: '2-digit', minute: '2-digit', hour12: false
+                })}</li>
             </ul>
             <p><strong>Message du patient:</strong></p>
-            <blockquote style="border-left: 4px solid ${process.env.DEFAULT_PRESET_COLORS_DEFAULT || '#d39424'}; margin: 0; padding: 0 15px; color: #555;">
+            <blockquote style="border-left: 4px solid #d39424; margin: 0; padding: 0 15px; color: #555;">
                 <p>${clientMessage}</p>
             </blockquote>
             <p>Veuillez contacter ce patient pour confirmer ou reprogrammer la consultation.</p>
@@ -139,67 +185,83 @@ exports.contactDoctorAndCreateCalendarEvent = asyncHandler(async (req, res) => {
         // 4. Create Google Calendar Event for the Doctor (if linked)
         let calendarEventLink = null;
         if (doctorGoogleCalendarRefreshToken) {
-            // Set the doctor's refresh token to the OAuth2 client
-            oauth2Client.setCredentials({
-                refresh_token: doctorGoogleCalendarRefreshToken,
-            });
+            try {
+                // Set the doctor's refresh token to the OAuth2 client
+                oauth2Client.setCredentials({
+                    refresh_token: doctorGoogleCalendarRefreshToken,
+                });
 
-            // Get a new access token using the refresh token (refresh tokens don't expire, access tokens do)
-            const { credentials } = await oauth2Client.refreshAccessToken();
-            oauth2Client.setCredentials(credentials); // Update the client with the new access token
+                // Get a new access token using the refresh token
+                const { credentials } = await oauth2Client.refreshAccessToken();
+                oauth2Client.setCredentials(credentials); // Update the client with the new access token
 
-            const calendar = google.calendar({ version: 'v3', auth: oauth2Client });
+                const calendar = google.calendar({ version: 'v3', auth: oauth2Client });
 
-            const eventStartTime = parsedConsultationDate;
-            const eventEndTime = new Date(parsedConsultationDate.getTime() + 30 * 60 * 1000); // Default 30-minute consultation
+                const eventStartTime = parsedConsultationDate;
+                const eventEndTime = new Date(parsedConsultationDate.getTime() + 30 * 60 * 1000); // Default 30-minute consultation
 
-            // Get server's current timezone or use a default
-            const serverTimeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'Europe/Paris';
+                const eventTimeZone = 'Africa/Tunis'; // Set a consistent timezone for events
 
-            const event = {
-                summary: `Consultation avec ${clientFirstName} ${clientLastName}`,
-                location: `${doctor.address || ''}, ${doctor.city || ''}, ${doctor.country || ''}`.trim() || 'Cabinet médical',
-                description: `Demande de consultation via Realsmile.\n\n` +
-                             `Patient: ${clientFirstName} ${clientLastName}\n` +
-                             `Email: ${clientEmail}\n` +
-                             `Téléphone: ${clientPhone}\n` +
-                             `Message du patient: "${clientMessage}"\n\n` +
-                             `Merci de confirmer ou reprogrammer avec le patient.`,
-                start: {
-                    dateTime: eventStartTime.toISOString(), // ISO string is preferred for consistency
-                    timeZone: serverTimeZone,
-                },
-                end: {
-                    dateTime: eventEndTime.toISOString(),
-                    timeZone: serverTimeZone,
-                },
-                attendees: [
-                    { 'email': doctorEmail }, // Doctor is the primary attendee
-                    // Consider if you want the patient directly invited to the doctor's calendar event.
-                    // This is usually optional and needs patient's explicit consent to share their email for invite.
-                    // { 'email': clientEmail, responseStatus: 'tentative' }
-                ],
-                reminders: {
-                    useDefault: false,
-                    overrides: [
-                        { method: 'email', minutes: 24 * 60 }, // 24 hours before
-                        { method: 'popup', minutes: 60 },    // 1 hour before
+                const event = {
+                    summary: `Consultation avec ${clientFirstName} ${clientLastName}`,
+                    location: `${doctor.address || ''}, ${doctor.city || ''}, ${doctor.user.country || ''}`.trim() || 'Cabinet médical',
+                    description: `Demande de consultation via Realsmile.\n\n` +
+                                 `Patient: ${clientFirstName} ${clientLastName}\n` +
+                                 `Email: ${clientEmail}\n` +
+                                 `Téléphone: ${clientPhone}\n` +
+                                 `Message du patient: "${clientMessage}"\n\n` +
+                                 `Merci de confirmer ou reprogrammer avec le patient.`,
+                    start: {
+                        dateTime: eventStartTime.toISOString(), // ISO string is preferred for consistency
+                        timeZone: eventTimeZone,
+                    },
+                    end: {
+                        dateTime: eventEndTime.toISOString(),
+                        timeZone: eventTimeZone,
+                    },
+                    attendees: [
+                        { 'email': doctorEmail, organizer: true, self: true }, // Doctor is the organizer
+                        { 'email': clientEmail, displayName: `${clientFirstName} ${clientLastName}`, responseStatus: 'needsAction' } // Patient is an attendee
                     ],
-                },
-                colorId: '4', // A standard Google Calendar color ID (e.g., '4' for green, '1' for blue, '2' for green, '3' for purple, etc.)
-            };
+                    reminders: {
+                        useDefault: false,
+                        overrides: [
+                            { method: 'email', minutes: 24 * 60 }, // 24 hours before
+                            { method: 'popup', minutes: 60 },     // 1 hour before
+                        ],
+                    },
+                    conferenceData: { // This generates a Google Meet link
+                        createRequest: {
+                            requestId: `realsmile-consultation-${Date.now()}`, // Unique ID for meeting creation
+                            conferenceSolutionKey: {
+                                type: 'hangoutsMeet'
+                            }
+                        }
+                    },
+                    sendNotifications: true, // Send email notifications for the event creation
+                    colorId: '4', // Green color in Google Calendar for easy identification
+                };
 
-            const createdEvent = await calendar.events.insert({
-                calendarId: 'primary', // Use 'primary' for the user's (doctor's) primary calendar
-                resource: event,
-            });
+                const createdEvent = await calendar.events.insert({
+                    calendarId: 'primary', // Use 'primary' for the doctor's primary calendar
+                    resource: event,
+                    sendUpdates: 'all', // Send updates to all attendees (patient, doctor)
+                    conferenceDataVersion: 1, // Important for generating Meet link
+                });
 
-            console.log('Google Calendar event created for doctor:', createdEvent.data.htmlLink);
-            calendarEventLink = createdEvent.data.htmlLink;
+                console.log('Google Calendar event created for doctor:', createdEvent.data.htmlLink);
+                calendarEventLink = createdEvent.data.htmlLink;
 
+            } catch (calendarError) {
+                console.error(`Failed to create Google Calendar event for doctor ${doctorEmail}:`, calendarError.message);
+                if (calendarError.response && calendarError.response.data) {
+                    console.error("Google API Error Details:", calendarError.response.data);
+                }
+                // Don't rethrow, just log and continue. The email was already sent.
+                // Frontend will still get a success message, but calendarEventLink will be null.
+            }
         } else {
             console.warn(`Doctor ${doctor.user.email} has not linked their Google Calendar. Event not created.`);
-            // You might inform the frontend about this via a different success message or a warning toast.
         }
 
         // 5. Respond to Frontend
@@ -209,77 +271,16 @@ exports.contactDoctorAndCreateCalendarEvent = asyncHandler(async (req, res) => {
         });
 
     } catch (error) {
-        console.error("Error in contactDoctorAndCreateCalendarEvent:", error);
-        // More specific error messages could be crafted here based on 'error.code' or 'error.response'
-        res.status(500).json({
-            message: "Échec de l'envoi de la demande de consultation. Une erreur est survenue lors de l'opération.",
-            error: error.message // Sending back error message for debugging
-        });
-    }
-});
-
-// ///////////////////////////////////////////////////////////////////////////
-// Place the initiateDoctorGoogleCalendarAuth and handleDoctorGoogleCalendarCallback
-// functions here if they are part of the same contactController.js file.
-// (As provided in the previous answer, these are for the doctor's side of things)
-// ///////////////////////////////////////////////////////////////////////////
-
-// Example: Route to initiate Google Calendar connection for a doctor
-// (This would be part of a doctor's settings/profile management, not the public contact form)
-exports.initiateDoctorGoogleCalendarAuth = asyncHandler(async (req, res) => {
-    // In a real app, ensure this route is protected so only logged-in doctors can initiate.
-    // For this example, let's assume `req.user.id` is available from authentication middleware.
-    if (!req.user || !req.user.id) {
-        return res.status(401).json({ message: "Authentication required to link calendar." });
-    }
-    const doctorUserId = req.user.id;
-
-    const scopes = ['https://www.googleapis.com/auth/calendar.events'];
-    const authUrl = oauth2Client.generateAuthUrl({
-        access_type: 'offline', // Request a refresh token
-        scope: scopes,
-        prompt: 'consent', // Always show consent screen to ensure refresh token is granted
-        state: JSON.stringify({ userId: doctorUserId }) // Pass user ID to retrieve it in callback
-    });
-    res.json({ authUrl });
-});
-
-// Example: OAuth Callback for Doctors
-// (This is the endpoint Google redirects to after a doctor grants permission)
-exports.handleDoctorGoogleCalendarCallback = asyncHandler(async (req, res) => {
-    const { code, state } = req.query; // 'code' is the auth code, 'state' is what we passed previously
-
-    if (!code) {
-        console.error('Google OAuth callback: No code received.');
-        // Redirect to a frontend page indicating error
-        return res.redirect(`${process.env.FRONTEND_URL}/doctor/settings?calendarLinked=false&error=no_code`);
-    }
-
-    let userIdFromState;
-    try {
-        userIdFromState = JSON.parse(state).userId;
-    } catch (e) {
-        console.error('Invalid state parameter in Google OAuth callback:', e);
-        return res.redirect(`${process.env.FRONTEND_URL}/doctor/settings?calendarLinked=false&error=invalid_state`);
-    }
-
-    try {
-        const { tokens } = await oauth2Client.getToken(code);
-        // Securely save tokens (especially refresh_token) for this doctor in your DB
-        await prisma.users.update({
-            where: { id: BigInt(userIdFromState) },
-            data: {
-                googleCalendarRefreshToken: tokens.refresh_token, // Store this securely!
-                // For direct API calls, you might store access_token and expiry as well,
-                // but for background operations, refresh_token is sufficient.
-            }
-        });
-
-        console.log(`Doctor ${userIdFromState} successfully linked Google Calendar.`);
-        // Redirect back to the doctor's settings page
-        res.redirect(`${process.env.FRONTEND_URL}/doctor/settings?calendarLinked=true`);
-    } catch (error) {
-        console.error('Error handling doctor Google Calendar callback:', error);
-        res.redirect(`${process.env.FRONTEND_URL}/doctor/settings?calendarLinked=false&error=auth_failed&details=${error.message}`);
+        console.error("Error in requestConsultation:", error);
+        if (error instanceof BadRequestError || error instanceof InternalError) {
+             // If it's one of our custom errors, send its message
+            next(error); // Pass to error handling middleware
+        } else {
+            // For unexpected errors, send a generic internal server error
+            res.status(500).json({
+                message: "Échec de l'envoi de la demande de consultation. Une erreur est survenue lors de l'opération.",
+                error: error.message // For debugging, remove in production
+            });
+        }
     }
 });

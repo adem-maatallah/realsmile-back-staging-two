@@ -225,3 +225,7 @@
 {"level":"info","message":"Processing email queue","timestamp":"2025-07-16T10:46:33.677Z"}
 {"level":"info","message":"Sending email to dr.khalil.gafsi@hotmail.com","timestamp":"2025-07-16T10:46:33.690Z"}
 {"level":"info","message":"Email sent to dr.khalil.gafsi@hotmail.com","timestamp":"2025-07-16T10:46:35.644Z"}
+{"level":"info","message":"Processing email queue","timestamp":"2025-07-16T18:23:25.088Z"}
+{"level":"info","message":"Sending email to rihabbrahmi038@gmail.com","timestamp":"2025-07-16T18:23:25.133Z"}
+{"level":"info","message":"Email sent to rihabbrahmi038@gmail.com","timestamp":"2025-07-16T18:23:27.805Z"}
+{"level":"info","message":"Email job added to queue for dottechnoogies8@gmail.com","timestamp":"2025-07-16T18:56:27.226Z"}

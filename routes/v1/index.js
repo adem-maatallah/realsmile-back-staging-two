@@ -1,6 +1,6 @@
 const express = require("express");
 const router = express.Router();
-const contactRoutes = require('./cartRoutes'); // <-- Path adjusted
+const contactRoutes = require('./contactRoutes'); // <-- Path adjusted
 
 const authRoutes = require("./authRoutes");
 const userRoutes = require("./userRoutes");
@@ -41,7 +41,7 @@ router.use("/users", userRoutes);
 router.use("/cases", caseRoutes);
 router.use("/iiwgl", iiwglRoutes);
 router.use("/cdn", cdnRoutes);
-router.use('/api/contact', contactRoutes); // Base route for contact functionalities
+router.use('/contact', contactRoutes); // Base route for contact functionalities
 
 router.use("/notifications", notificationRoutes);
 router.use("/laboratories", laboratoryRoutes);

@@ -1423,6 +1423,26 @@ exports.getMe = async (req, res) => {
 
   const user = await prisma.users.findUnique({
     where: { id: req.session.userId },
+    // Include the googleCalendarRefreshToken here
+    select: {
+      id: true,
+      email: true,
+      first_name: true,
+      last_name: true,
+      user_name: true,
+      phone: true,
+      profile_pic: true,
+      has_mobile_account: true,
+      country: true,
+      two_factor_enabled: true,
+      status: true,
+      phone_verified: true,
+      email_verified: true,
+      longitude: true,
+      latitude: true,
+      googleCalendarRefreshToken: true, // <--- ADD THIS LINE
+      // Add other fields you need for the user object here
+    },
   });
 
   if (!user) {
@@ -1437,7 +1457,7 @@ exports.getMe = async (req, res) => {
     status: "success",
     data: {
       user: {
-        id: userId,
+        id: Number(user.id), // Ensure BigInt is converted to Number
         email: user.email,
         first_name: user.first_name,
         last_name: user.last_name,
@@ -1452,9 +1472,10 @@ exports.getMe = async (req, res) => {
         email_verified: user.email_verified,
         longitude: user.longitude,
         latitude: user.latitude,
-        cases: req.session.cases,
-        role, // e.g. "patient"
+        role: role, // e.g. "patient"
         roleId: role_id, // numeric role id from session
+        // Add googleCalendarRefreshToken to the returned user object
+        googleCalendarRefreshToken: user.googleCalendarRefreshToken, // <--- ADD THIS LINE
       },
     },
   });
