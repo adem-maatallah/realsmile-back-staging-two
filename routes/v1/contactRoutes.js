@@ -3,7 +3,12 @@ const express = require('express');
 const router = express.Router();
 const contactController = require('../../controllers/contactController'); // Path to your controller
 const authController = require('../../controllers/authController'); // Needed for protect and restrictTo middleware
-
+router.get(
+    '/consultations',
+    authController.protect,
+    authController.restrictTo('doctor'),
+    contactController.getDoctorConsultations
+);
 // Public route: Handle sending a consultation request message and creating a doctor's calendar event
 router.post('/doctor', contactController.requestConsultation);
 

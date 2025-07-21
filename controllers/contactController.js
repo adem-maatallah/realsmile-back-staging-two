@@ -284,3 +284,99 @@ exports.requestConsultation = asyncHandler(async (req, res, next) => {
         }
     }
 });
+
+
+
+
+
+/**
+ * @desc   Récupère les événements de consultation depuis le Google Calendar du médecin connecté.
+ * @route  GET /api/contact/consultations
+ * @access Private (Doctor only)
+ */
+exports.getDoctorConsultations = asyncHandler(async (req, res, next) => {
+    const doctorId = req.user.id; // L'ID vient du middleware `protect`
+
+    // 1. Récupérer le refresh token du médecin depuis la BDD
+    const doctorUser = await prisma.users.findUnique({
+        where: { id: BigInt(doctorId) },
+    });
+
+    if (!doctorUser || !doctorUser.googleCalendarRefreshToken) {
+        // Le médecin n'a pas lié son calendrier, on renvoie une liste vide.
+        // It's good practice to inform the user why the list is empty.
+        return res.status(200).json({
+            message: "Google Calendar not linked. No events to display.",
+            events: []
+        });
+    }
+
+    const oauth2Client = new google.auth.OAuth2(
+        process.env.GOOGLE_CLIENT_ID,
+        process.env.GOOGLE_CLIENT_SECRET,
+        process.env.GOOGLE_CALENDAR_REDIRECT_URI
+    );
+
+    try {
+        // 2. Utiliser le refresh token pour obtenir un nouvel access token
+        oauth2Client.setCredentials({
+            refresh_token: doctorUser.googleCalendarRefreshToken,
+        });
+
+        const { credentials } = await oauth2Client.refreshAccessToken();
+        oauth2Client.setCredentials(credentials);
+
+        // FIX: The variable was `oauth2client` (lowercase c), it should be `oauth2Client` (uppercase C).
+        const calendar = google.calendar({ version: 'v3', auth: oauth2Client });
+
+        // 3. Lister les événements
+        const oneYearAgo = new Date();
+        oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
+
+        const response = await calendar.events.list({
+            calendarId: 'primary',
+            timeMin: oneYearAgo.toISOString(),
+            q: 'Consultation avec', // Filter to get only consultation events created by your app
+            singleEvents: true,
+            orderBy: 'startTime',
+            maxResults: 250, // Limit the number of results
+        });
+
+        const events = response.data.items;
+
+        if (!events || events.length === 0) {
+            return res.status(200).json({ events: [] });
+        }
+
+        // 4. Formater les événements pour le calendrier frontend (react-big-calendar)
+        const formattedEvents = events.map(event => ({
+            id: event.id,
+            title: event.summary,
+            start: new Date(event.start.dateTime || event.start.date),
+            end: new Date(event.end.dateTime || event.end.date),
+            allDay: !!event.start.date, // If only a date is provided, it's an all-day event
+            resource: { // Store extra details in the resource property
+                description: event.description,
+                location: event.location,
+                attendees: event.attendees,
+                meetLink: event.hangoutLink, // Google Meet link
+                calendarLink: event.htmlLink, // Link to the event in Google Calendar
+            }
+        }));
+
+        res.status(200).json({ events: formattedEvents });
+
+    } catch (error) {
+        console.error("Erreur lors de la récupération des événements Google Calendar:", error);
+        // If the token is invalid (e.g., revoked by the user), it's a good idea to notify the user.
+        if (error.response && error.response.data && (error.response.data.error === 'invalid_grant' || error.response.data.error === 'unauthorized_client')) {
+             // Optionally, clear the invalid refresh token from the database
+            await prisma.users.update({
+                where: { id: BigInt(doctorId) },
+                data: { googleCalendarRefreshToken: null },
+            });
+            return res.status(401).json({ message: "Votre autorisation pour Google Calendar a expiré ou a été révoquée. Veuillez reconnecter votre calendrier depuis les paramètres." });
+        }
+        res.status(500).json({ message: "Impossible de récupérer les événements du calendrier." });
+    }
+});
